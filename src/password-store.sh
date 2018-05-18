@@ -263,6 +263,8 @@ cmd_usage() {
 	        List passwords.
 	    $PROGRAM find pass-names...
 	    	List passwords that match pass-names.
+	    $PROGRAM choose [pass-names...]
+	    	List passwords that match pass-names and ask to choose one
 	    $PROGRAM [show] [--clip[=line-number],-c[line-number]] pass-name
 	        Show existing password and optionally put it on the clipboard.
 	        If put on the clipboard, it will be cleared in $CLIP_TIME seconds.
@@ -393,6 +395,44 @@ cmd_find() {
 	local terms="*$(printf '%s*|*' "$@")"
 	tree -C -l --noreport -P "${terms%|*}" --prune --matchdirs --ignore-case "$PREFIX" | tail -n +2 | sed -E 's/\.gpg(\x1B\[[0-9]+m)?( ->|$)/\1\2/g'
 }
+
+cmd_choose() {
+	IFS="," eval 'echo "Search Terms: $*"'
+	local terms="*$(printf '%s*|*' "$@")"
+	readarray < <(tree -i -C -l -f --noreport -P "${terms%|*}" --prune --matchdirs --ignore-case ~/.password-store|tail -n +2|grep '\.gpg$')
+	i=0
+	OIFS=$IFS
+	export IFS=""
+	tree -C -l --noreport -P "${terms%|*}" --prune --matchdirs --ignore-case "$PREFIX" | tail -n +2 |  while read a; do
+		b=$(echo $a|sed -E 's/\.gpg(\x1B\[[0-9]+m)?( ->|$)/\1\2/g')
+		if echo $a|grep -q '\.gpg$'; then
+			i=$((i+1))
+			printf "%3i %s\n" "$i" "$b"
+		else
+			printf "    %s\n" "$b"
+		fi
+	done
+	IFS="$OIFS"
+	chosen=""
+	maplen=${#MAPFILE[*]}
+	if [ $maplen -eq 1 ]; then
+		chosen=${MAPFILE[0]}
+	fi
+	if [ $maplen -ge 1 ]; then
+		while [ "x$chosen" == "x" ]; do
+			read -p "Choose a line: " r
+			r=$(($r-1))
+			chosen=${MAPFILE[$r]}
+		done
+		chosen=$(echo ${chosen#$PREFIX/}) # get rid of trailing newline with echo
+		chosen=${chosen%.gpg}
+		echo "Choosing: $chosen"
+		echo
+		cmd_show $chosen
+	fi
+}
+
+
 
 cmd_grep() {
 	[[ $# -ne 1 ]] && die "Usage: $PROGRAM $COMMAND search-string"
@@ -686,6 +726,7 @@ case "$1" in
 	version|--version) shift;	cmd_version "$@" ;;
 	show|ls|list) shift;		cmd_show "$@" ;;
 	find|search) shift;		cmd_find "$@" ;;
+	choose) shift;			cmd_choose "$@" ;;
 	grep) shift;			cmd_grep "$@" ;;
 	insert|add) shift;		cmd_insert "$@" ;;
 	edit) shift;			cmd_edit "$@" ;;
